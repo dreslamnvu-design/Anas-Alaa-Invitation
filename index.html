@@ -141,6 +141,8 @@ body.in #music{display:grid}
 #music:not(.off) .x{display:none}
 .bh{position:fixed;z-index:200;pointer-events:none;font-size:22px;transform:translate(-50%,-50%);animation:bh 1.3s cubic-bezier(.15,.7,.3,1) forwards}
 @keyframes bh{0%{opacity:1;transform:translate(-50%,-50%) scale(.3)}15%{opacity:1}100%{opacity:0;transform:translate(calc(-50% + var(--x)),calc(-50% + var(--y) + 90px)) scale(var(--s)) rotate(var(--r))}}
+.glowheart{width:20px;height:20px;vertical-align:-4px;fill:#e0233f;animation:glowh 1.6s ease-in-out infinite}
+@keyframes glowh{0%,100%{opacity:.35;transform:scale(.85);filter:drop-shadow(0 0 0 rgba(224,35,63,0))}50%{opacity:1;transform:scale(1.15);filter:drop-shadow(0 0 7px rgba(255,60,90,.95))}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition-duration:.01s!important}}
 </style>
 </head>
@@ -165,7 +167,7 @@ body.in #music{display:grid}
   </div>
 </div>
 
-<audio id="audio" src="audio.mp3" preload="auto" loop></audio>
+<audio id="audio" src="./audio.mp3" preload="auto" playsinline loop></audio>
 <button id="music" aria-label="تشغيل أو إيقاف الموسيقى">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path class="w" d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/><path class="x" d="m22 9-6 6m0-6 6 6"/></svg>
 </button>
@@ -222,7 +224,7 @@ body.in #music{display:grid}
 
   <section class="reveal" id="rsvp">
     <h2 class="gold-text">تأكيد الحضور والتهنئة</h2>
-    <p class="hint" style="margin-bottom:16px">اكتب اسمك وكلمة تهنئة، وستظهر لهما في دفتر التهاني أدناه</p>
+    <p class="hint" style="margin-bottom:16px">اكتب اسمك وتهنئتك، وستظهر لنا في دفتر التهاني <svg class="glowheart" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-8-5.500-8-11.200A4.800 4.800 0 0 1 12 7a4.800 4.800 0 0 1 8 2.800C20 15.500 12 21 12 21z"/></svg></p>
     <form id="form">
       <input id="nm" placeholder="الاسم" maxlength="40" required autocomplete="name">
       <textarea id="ms" rows="3" placeholder="اكتب تهنئتك أو دعاءك للعروسين…" maxlength="280" required></textarea>
@@ -263,38 +265,46 @@ const $ = s => document.querySelector(s);
 const audio = $('#audio'), gate = $('#gate'), music = $('#music');
 
 /* ===== Gate / music ===== */
+function startMusic(){
+  const p = audio.play();
+  if(p && p.then) p.then(()=>{ music.classList.remove('off'); fadeIn(); }).catch(()=>{ music.classList.add('off'); });
+}
+function fadeIn(){
+  try{ audio.volume = 0; let v = 0; const f = setInterval(()=>{ v = Math.min(1, v+.05); audio.volume = v; if(v>=1) clearInterval(f); }, 120); }catch(e){}
+}
 function enter(){
   if(gate.classList.contains('open')) return;
-  try{ audio.currentTime = START; }catch(e){}
-  audio.volume = 0; audio.play().catch(()=>{});
-  let v = 0; const f = setInterval(()=>{ v = Math.min(1, v+.05); audio.volume = v; if(v>=1) clearInterval(f); }, 120);
+  startMusic();
   if(navigator.vibrate) navigator.vibrate(40);
   gate.classList.add('open');
   setTimeout(()=>{ document.body.classList.remove('lock'); document.body.classList.add('in'); window.scrollTo(0,0); }, 700);
   setTimeout(()=>gate.classList.add('gone'), 2500);
 }
+/* لو المتصفح منع التشغيل التلقائي، نعيد المحاولة مع أول لمسة */
+['pointerdown','touchstart','keydown'].forEach(ev => document.addEventListener(ev, ()=>{
+  if(document.body.classList.contains('in') && audio.paused && !music.dataset.manual) startMusic();
+}, {passive:true}));
+audio.addEventListener('error', ()=>console.warn('تعذر تحميل audio.mp3 - تأكد أنه في نفس مجلد index.html وبنفس الاسم'));
 $('#enter').addEventListener('click', enter);
-audio.addEventListener('ended', ()=>{ audio.currentTime = START; audio.play(); });
-audio.addEventListener('timeupdate', ()=>{ if(audio.currentTime < START - .2 && !audio.paused) audio.currentTime = START; });
 music.addEventListener('click', ()=>{
-  if(audio.paused){ audio.play(); music.classList.remove('off'); } else { audio.pause(); music.classList.add('off'); }
+  music.dataset.manual = '1';
+  if(audio.paused){ audio.play().catch(()=>{}); music.classList.remove('off'); } else { audio.pause(); music.classList.add('off'); }
 });
 
 /* ===== Reveal on scroll ===== */
 const io = new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting){ e.target.classList.add('show'); io.unobserve(e.target); } }), {threshold:.15});
 document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
 
-/* ===== Add to calendar (.ics) ===== */
+/* ===== Add to calendar (Google Calendar) ===== */
 $('#cal').addEventListener('click', ()=>{
-  const ics = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Anas Alaa Wedding//AR','CALSCALE:GREGORIAN','BEGIN:VEVENT',
-    'UID:wedding-anas-alaa-20261119@invitation','DTSTAMP:20261101T000000Z',
-    'DTSTART:20261119T180000Z','DTEND:20261119T220000Z',
-    'SUMMARY:حفل زفاف أنس & آلاء','LOCATION:قاعة روفان - الواحات الخارجة - الوادي الجديد',
-    'DESCRIPTION:خريطة الموقع: https://maps.app.goo.gl/SYfLgdBeM2ukS6vRA',
-    'BEGIN:VALARM','TRIGGER:-PT3H','ACTION:DISPLAY','DESCRIPTION:حفل زفاف أنس & آلاء الليلة','END:VALARM','END:VEVENT','END:VCALENDAR'].join('\r\n');
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([ics], {type:'text/calendar;charset=utf-8'}));
-  a.download = 'wedding-anas-alaa.ics'; document.body.appendChild(a); a.click(); a.remove();
+  const q = new URLSearchParams({
+    action:'TEMPLATE', text:'حفل زفاف أنس & آلاء',
+    dates:'20261119T180000Z/20261119T220000Z',   // 8م - 12م بتوقيت القاهرة
+    ctz:'Africa/Cairo',
+    location:'قاعة روفان - الواحات الخارجة - الوادي الجديد',
+    details:'ندعوكم لمشاركتنا فرحتنا\nخريطة الموقع: https://maps.app.goo.gl/SYfLgdBeM2ukS6vRA'
+  });
+  window.open('https://calendar.google.com/calendar/render?' + q.toString(), '_blank', 'noopener');
 });
 
 /* ===== Countdown ===== */
